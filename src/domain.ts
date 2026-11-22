@@ -1,15 +1,17 @@
-export interface Activity { id: string; name: string; date: string; time: string; duration: number; cost: number; location: string; notes: string; category: string }
+import { Temporal } from '@js-temporal/polyfill'
+export interface Activity { id: string; name: string; date: string; time: string; duration: number; cost: number; location: string; notes: string; category: string; fixed?: boolean; travelMinutes?: number | null; travelSource?: 'demo' | 'manual' | 'unknown' }
 export interface Place { id: string; name: string; location: string; category: string; notes: string }
 export interface Trip { id: string; name: string; destination: string; start: string; end: string; travelers: number; budget: number; activities: Activity[]; places: Place[] }
 export interface Database { version: 1; trips: Trip[] }
 export const id = () => crypto.randomUUID()
 export const seed: Database = { version: 1, trips: [{ id: 'kyoto', name: 'Kyoto in bloom', destination: 'Kyoto, Japan', start: '2027-03-14', end: '2027-03-16', travelers: 2, budget: 30000, activities: [
   { id: 'a1', name: 'Fushimi Inari', date: '2027-03-14', time: '08:00', duration: 120, cost: 0, location: 'Fushimi Ward', notes: 'Walk the upper torii trail.', category: 'Culture' },
-  { id: 'a2', name: 'Nishiki Market', date: '2027-03-14', time: '12:30', duration: 90, cost: 3600, location: 'Downtown Kyoto', notes: 'Try seasonal sweets.', category: 'Food' },
+  { id: 'a2', name: 'Lunch at Nishiki Market', date: '2027-03-14', time: '12:00', duration: 60, cost: 3600, location: 'Downtown Kyoto', notes: 'Flexible lunch · try seasonal sweets.', category: 'Food', fixed: false },
+  { id: 'a4', name: 'Kiyomizu-dera tea ceremony', date: '2027-03-14', time: '13:20', duration: 60, cost: 0, location: 'Higashiyama Ward', notes: 'Fixed reservation.', category: 'Culture', fixed: true, travelMinutes: 35, travelSource: 'demo' },
   { id: 'a3', name: 'Arashiyama Grove', date: '2027-03-15', time: '08:00', duration: 150, cost: 1000, location: 'Ukyo Ward', notes: 'Arrive early.', category: 'Nature' },
 ], places: [{ id: 'p1', name: 'Kiyomizu-dera', location: 'Higashiyama', category: 'Culture', notes: 'Temple terrace at sunset.' }, { id: 'p2', name: 'Philosopher’s Path', location: 'Sakyo Ward', category: 'Nature', notes: 'Canal-side walk.' }] }] }
 export const totalCost = (trip: Trip) => trip.activities.reduce((sum, a) => sum + a.cost, 0)
-export function overlaps(a: Activity, b: Activity): boolean { const start = (x: Activity) => Date.parse(`${x.date}T${x.time}:00`); const x = start(a), y = start(b); return a.id !== b.id && x < y + b.duration * 60000 && y < x + a.duration * 60000 }
+export function overlaps(a: Activity, b: Activity, timeZone = 'Asia/Tokyo'): boolean { const start = (x: Activity) => Temporal.PlainDateTime.from(`${x.date}T${x.time}`).toZonedDateTime(timeZone).epochMilliseconds; const x = start(a), y = start(b); return a.id !== b.id && x < y + b.duration * 60000 && y < x + a.duration * 60000 }
 export function conflictIds(activities: Activity[]): Set<string> { const found = new Set<string>(); activities.forEach((a, i) => activities.slice(i + 1).forEach(b => { if (overlaps(a,b)) { found.add(a.id); found.add(b.id) } })); return found }
 export function datesBetween(start: string, end: string): string[] { const result: string[] = []; const d = new Date(`${start}T12:00:00Z`); const last = new Date(`${end}T12:00:00Z`); while (d <= last && result.length < 366) { result.push(d.toISOString().slice(0,10)); d.setUTCDate(d.getUTCDate()+1) } return result }
 const validDate = (d: unknown) => typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && !Number.isNaN(Date.parse(`${d}T00:00:00Z`))
