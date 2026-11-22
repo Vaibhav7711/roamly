@@ -1,161 +1,38 @@
-import { useMemo, useState } from 'react'
-import {
-  ArrowLeft, CalendarDays, Check, ChevronDown, CircleAlert, Clock3, Compass,
-  GripVertical, Heart, Leaf, Map, MapPin, Menu, MessageCircle, MoreHorizontal,
-  Plus, Search, Share2, SlidersHorizontal, Sparkles, Star, TrainFront, Users, WalletCards, X,
-} from 'lucide-react'
-import { initialItinerary, places } from './data'
-import type { Category, DayKey, Itinerary, Place, ScheduledItem, TimeSlot } from './types'
-import { formatYen, hasConflict, totalCost, tripProgress } from './utils'
+import { useEffect, useRef, useState } from 'react'
+import type { FormEvent } from 'react'
+import { Compass, Plus, ArrowLeft, CalendarDays, MapPin, Wallet, Download, Upload, Pencil, Trash2, ArrowUp, ArrowDown, Search, Bookmark, AlertTriangle } from 'lucide-react'
+import { conflictIds, datesBetween, id, seed, totalCost, validDatabase } from './domain'
+import type { Activity, Place, Trip } from './domain'
+import './product.css'
 
-const days: { key: DayKey; weekday: string; date: string; theme: string }[] = [
-  { key: 'day1', weekday: 'Friday', date: '14 Mar', theme: 'Temples & tastes' },
-  { key: 'day2', weekday: 'Saturday', date: '15 Mar', theme: 'Bamboo & old Kyoto' },
-  { key: 'day3', weekday: 'Sunday', date: '16 Mar', theme: 'Slow city morning' },
-]
-const slots: TimeSlot[] = ['Morning', 'Afternoon', 'Evening']
-const categoryIcon: Record<Category, string> = { Culture: '文', Food: '味', Nature: '葉', Shopping: '店' }
-
+const KEY = 'roamly-workspace-v1'
+const money = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'JPY', maximumFractionDigits: 0 }).format(n)
+const displayDate = (s: string) => new Date(`${s}T12:00:00`).toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })
+const newTrip = (): Trip => ({ id: id(), name: '', destination: '', start: '2027-03-14', end: '2027-03-16', travelers: 2, budget: 30000, activities: [], places: [] })
+const newActivity = (day: string): Activity => ({ id: id(), name: '', date: day, time: '09:00', duration: 60, cost: 0, location: '', notes: '', category: 'Culture' })
 function App() {
-  const [itinerary, setItinerary] = useState<Itinerary>(() => {
-    const saved = localStorage.getItem('roamly-itinerary')
-    return saved ? JSON.parse(saved) : initialItinerary
-  })
-  const [activeDay, setActiveDay] = useState<DayKey>('day1')
-  const [category, setCategory] = useState<Category | 'All'>('All')
-  const [query, setQuery] = useState('')
-  const [favorites, setFavorites] = useState<string[]>(['fushimi', 'arashiyama'])
-  const [dragged, setDragged] = useState<string | null>(null)
-  const [toast, setToast] = useState('')
-  const [mobilePanel, setMobilePanel] = useState<'discover' | 'map' | null>(null)
-  const [travellers, setTravellers] = useState(2)
-
-  const allItems = useMemo(() => Object.values(itinerary).flat(), [itinerary])
-  const currentItems = itinerary[activeDay]
-  const filteredPlaces = places.filter((place) => {
-    const matchesCategory = category === 'All' || place.category === category
-    const matchesQuery = `${place.name} ${place.area}`.toLowerCase().includes(query.toLowerCase())
-    return matchesCategory && matchesQuery
-  })
-  const activeMeta = days.find((day) => day.key === activeDay)!
-
-  const persist = (next: Itinerary) => {
-    setItinerary(next)
-    localStorage.setItem('roamly-itinerary', JSON.stringify(next))
-  }
-
-  const addPlace = (place: Place, slot: TimeSlot = 'Afternoon') => {
-    if (currentItems.some((item) => item.id === place.id)) {
-      setToast(`${place.name} is already on this day`)
-    } else {
-      const start = slot === 'Morning' ? '09:00' : slot === 'Afternoon' ? '14:00' : '18:30'
-      persist({ ...itinerary, [activeDay]: [...currentItems, { ...place, slot, start }] })
-      setToast(`${place.name} added to ${activeMeta.weekday}`)
-    }
-    window.setTimeout(() => setToast(''), 2500)
-  }
-
-  const moveItem = (id: string, slot: TimeSlot) => {
-    persist({ ...itinerary, [activeDay]: currentItems.map((item) => item.id === id ? { ...item, slot } : item) })
-    setDragged(null)
-  }
-
-  const removeItem = (id: string) => persist({ ...itinerary, [activeDay]: currentItems.filter((item) => item.id !== id) })
-  const toggleFavorite = (id: string) => setFavorites((items) => items.includes(id) ? items.filter((item) => item !== id) : [...items, id])
-
-  return (
-    <div className="roamly-app">
-      <header className="app-header">
-        <div className="wordmark"><span><Compass size={21} /></span><b>roamly</b></div>
-        <div className="trip-switcher"><span className="trip-cover">京</span><div><small>MY TRIP</small><b>Kyoto in bloom</b></div><ChevronDown size={16} /></div>
-        <nav><button className="active">Plan</button><button>Explore</button><button>Notes</button></nav>
-        <div className="header-actions"><button className="mobile-icon" onClick={() => setMobilePanel('discover')} aria-label="Explore places"><Search size={18} /></button><div className="collaborators"><span>MJ</span><span>AK</span><span>+1</span></div><button><MessageCircle size={17} /><span>Comments</span><i>3</i></button><button className="share"><Share2 size={17} />Share</button><button className="menu"><Menu size={20} /></button></div>
-      </header>
-
-      <section className="trip-hero">
-        <div><button className="back"><ArrowLeft size={15} />All trips</button><p className="kicker">JAPAN · 3 DAYS</p><h1>Kyoto in bloom</h1><p className="subtitle">A thoughtful weekend of quiet temples, tiny kitchens, and long walks.</p></div>
-        <div className="trip-facts"><div><CalendarDays size={17} /><span><small>DATES</small><b>14–16 Mar 2027</b></span></div><div><Users size={17} /><span><small>TRAVELLERS</small><b>{travellers} people</b></span><button onClick={() => setTravellers((value) => value === 4 ? 1 : value + 1)}><Plus size={13} /></button></div><div><WalletCards size={17} /><span><small>ACTIVITY BUDGET</small><b>{formatYen(totalCost(allItems, travellers))}</b></span></div></div>
-      </section>
-
-      <main className="planner-shell">
-        <aside className={`discover-panel ${mobilePanel === 'discover' ? 'mobile-open' : ''}`}>
-          <div className="mobile-panel-head"><b>Discover Kyoto</b><button onClick={() => setMobilePanel(null)}><X /></button></div>
-          <div className="discover-title"><div><p className="section-label">DISCOVER</p><h2>Find a new favorite</h2></div><button><SlidersHorizontal size={16} /></button></div>
-          <label className="place-search"><Search size={16} /><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search Kyoto" /></label>
-          <div className="category-pills">{(['All', 'Culture', 'Food', 'Nature', 'Shopping'] as const).map((item) => <button className={category === item ? 'active' : ''} onClick={() => setCategory(item)} key={item}>{item}</button>)}</div>
-          <div className="place-list">
-            {filteredPlaces.map((place) => <article className="place-card" key={place.id} draggable onDragStart={() => setDragged(place.id)}>
-              <div className="place-art" style={{ '--place-color': place.color } as React.CSSProperties}><span>{categoryIcon[place.category]}</span><small>{place.category}</small><button onClick={() => toggleFavorite(place.id)} aria-label={`Favorite ${place.name}`}><Heart size={16} fill={favorites.includes(place.id) ? 'currentColor' : 'none'} /></button></div>
-              <div className="place-copy"><div><h3>{place.name}</h3><span><Star size={11} fill="currentColor" />{place.rating}</span></div><p><MapPin size={11} />{place.area}</p><footer><span><Clock3 size={12} />{Math.round(place.duration / 60 * 10) / 10} hr</span><span>{place.cost ? formatYen(place.cost) : 'Free'}</span><button onClick={() => addPlace(place)} aria-label={`Add ${place.name}`}><Plus size={15} /></button></footer></div>
-            </article>)}
-          </div>
-        </aside>
-
-        <section className="itinerary-panel">
-          <div className="day-tabs">{days.map((day, index) => <button key={day.key} onClick={() => setActiveDay(day.key)} className={activeDay === day.key ? 'active' : ''}><span>DAY {index + 1}</span><b>{day.weekday}</b><small>{day.date}</small></button>)}</div>
-          <div className="day-heading"><div><p className="section-label">{activeMeta.date.toUpperCase()} · KYOTO</p><h2>{activeMeta.theme}</h2></div><div><button className="map-mobile" onClick={() => setMobilePanel('map')}><Map size={16} />Map</button><button><Sparkles size={16} />Smart fill</button><button aria-label="More options"><MoreHorizontal size={19} /></button></div></div>
-
-          <div className="progress-note"><div className="progress-icon"><Leaf size={17} /></div><div><b>Your day is {tripProgress(currentItems, 4)}% planned</b><span>{currentItems.length < 4 ? 'There is room for one more slow moment.' : 'A full day — remember to leave space to wander.'}</span></div><div className="progress-track"><span style={{ width: `${tripProgress(currentItems, 4)}%` }} /></div></div>
-
-          <div className="timeline">
-            {slots.map((slot) => {
-              const slotItems = currentItems.filter((item) => item.slot === slot)
-              const conflict = hasConflict(currentItems, slot)
-              return <section className={`time-block ${dragged ? 'drag-active' : ''}`} key={slot} onDragOver={(event) => event.preventDefault()} onDrop={() => {
-                if (!dragged) return
-                const existing = currentItems.find((item) => item.id === dragged)
-                existing ? moveItem(dragged, slot) : addPlace(places.find((place) => place.id === dragged)!, slot)
-                setDragged(null)
-              }}>
-                <div className="slot-label"><span>{slot}</span><small>{slot === 'Morning' ? '07:00–12:00' : slot === 'Afternoon' ? '12:00–17:30' : '17:30–22:00'}</small>{conflict && <em><CircleAlert size={12} />Too full</em>}</div>
-                <div className="slot-items">
-                  {slotItems.map((item) => <ItineraryCard key={item.id} item={item} onDrag={() => setDragged(item.id)} onRemove={() => removeItem(item.id)} />)}
-                  <button className="add-stop" onClick={() => setMobilePanel('discover')}><Plus size={15} />Add a stop</button>
-                </div>
-              </section>
-            })}
-          </div>
-        </section>
-
-        <aside className={`map-panel ${mobilePanel === 'map' ? 'mobile-open' : ''}`}>
-          <div className="mobile-panel-head"><b>Route map</b><button onClick={() => setMobilePanel(null)}><X /></button></div>
-          <div className="map-toolbar"><div><button className="active">Map</button><button>List</button></div><button><SlidersHorizontal size={15} /></button></div>
-          <RouteMap items={currentItems} />
-          <div className="route-summary"><div className="route-heading"><div><span><TrainFront size={16} /></span><div><small>ESTIMATED TRAVEL</small><b>48 min · 3 transfers</b></div></div><button><ChevronDown size={15} /></button></div><div className="route-steps"><span><i className="walk" />Walk <b>18 min</b></span><span><i className="train" />Train <b>24 min</b></span><span><i className="wait" />Buffer <b>6 min</b></span></div></div>
-          <div className="budget-card"><div><span><WalletCards size={17} /></span><div><small>DAY BUDGET</small><b>{formatYen(totalCost(currentItems, travellers))}</b></div><em>{Math.round((totalCost(currentItems, travellers) / Math.max(totalCost(allItems, travellers), 1)) * 100)}%</em></div><div className="budget-track"><span style={{ width: `${Math.min(100, totalCost(currentItems, travellers) / 120)}%` }} /></div><p>Activities for {travellers} travellers · transport not included</p></div>
-          <button className="ready-button"><Check size={17} />Mark day as ready</button>
-        </aside>
-      </main>
-      {toast && <div className="toast"><Check size={16} />{toast}</div>}
-      {mobilePanel && <button className="panel-scrim" onClick={() => setMobilePanel(null)} aria-label="Close panel" />}
-    </div>
-  )
+  const [load] = useState(() => { try { const text = localStorage.getItem(KEY); if (!text) return {db:seed,error:''}; const v:unknown = JSON.parse(text); return validDatabase(v) ? {db:v,error:''} : {db:seed,error:'Saved data is invalid and has not been overwritten. Import a backup or reset.'} } catch { return {db:seed,error:'Saved data could not be read and has not been overwritten. Import a backup or reset.'} } })
+  const [db,setDb] = useState(load.db); const [storageError,setStorageError] = useState(load.error); const [tripId,setTripId] = useState(''); const [page,setPage] = useState<'overview'|'itinerary'|'places'|'data'>('overview'); const [day,setDay] = useState(''); const [tripEdit,setTripEdit] = useState<Trip|null>(null); const [activityEdit,setActivityEdit] = useState<Activity|null>(null); const [placeEdit,setPlaceEdit] = useState<Place|null>(null); const [search,setSearch] = useState(''); const [category,setCategory] = useState('All'); const [notice,setNotice] = useState(''); const inputRef=useRef<HTMLInputElement>(null)
+  useEffect(() => { if (!storageError) try { localStorage.setItem(KEY,JSON.stringify(db)) } catch { setStorageError('Could not save locally. Export a backup before leaving.') } },[db,storageError])
+  const trip=db.trips.find(t=>t.id===tripId); const days=trip ? datesBetween(trip.start,trip.end) : []; const activeDay=days.includes(day) ? day : days[0]; const conflicts=trip ? conflictIds(trip.activities) : new Set<string>(); const items=trip?.activities.filter(a=>a.date===activeDay) ?? []
+  const changeTrip=(next:Trip)=>setDb(d=>({...d,trips:d.trips.map(t=>t.id===next.id?next:t)}))
+  const selectTrip=(t:Trip)=>{setTripId(t.id);setDay(t.start);setPage('overview');setSearch('');setCategory('All')}
+  const saveTrip=(e:FormEvent)=>{e.preventDefault();if(!tripEdit || !tripEdit.name.trim() || !tripEdit.destination.trim() || tripEdit.start>tripEdit.end || datesBetween(tripEdit.start,tripEdit.end).length>=366)return;if(tripEdit.activities.some(a=>a.date<tripEdit.start || a.date>tripEdit.end)){setNotice('Move activities inside the new date range before changing trip dates.');return}const exists=db.trips.some(t=>t.id===tripEdit.id);setDb(d=>({...d,trips:exists?d.trips.map(t=>t.id===tripEdit.id?tripEdit:t):[...d.trips,tripEdit]}));setTripEdit(null);selectTrip(tripEdit);setNotice(exists?'Trip updated.':'Trip created.')}
+  const saveActivity=(e:FormEvent)=>{e.preventDefault();if(!trip||!activityEdit||!activityEdit.name.trim())return;const exists=trip.activities.some(a=>a.id===activityEdit.id);changeTrip({...trip,activities:exists?trip.activities.map(a=>a.id===activityEdit.id?activityEdit:a):[...trip.activities,activityEdit]});setDay(activityEdit.date);setActivityEdit(null);setNotice(exists?'Activity updated.':'Activity added.')}
+  const move=(activity:Activity,direction:number)=>{if(!trip)return;const indices=trip.activities.map((a,i)=>a.date===activity.date?i:-1).filter(i=>i>=0);const index=indices.findIndex(i=>trip.activities[i].id===activity.id);const other=indices[index+direction];if(other===undefined)return;const next=[...trip.activities];[next[indices[index]],next[other]]=[next[other],next[indices[index]]];changeTrip({...trip,activities:next})}
+  const exportData=()=>{const url=URL.createObjectURL(new Blob([JSON.stringify(db,null,2)],{type:'application/json'}));const a=document.createElement('a');a.href=url;a.download='roamly-backup.json';a.click();URL.revokeObjectURL(url)}
+  const importData=async(file?:File)=>{if(!file)return;try{const value:unknown=JSON.parse(await file.text());if(!validDatabase(value))throw Error();if(window.confirm('Replace all trips with this backup?')){setDb(value);setStorageError('');setTripId('');setPage('overview');setNotice('Backup imported.')}}catch{setNotice('Import failed. Choose a valid Roamly backup.')}if(inputRef.current)inputRef.current.value=''}
+  return <div className="travel-app"><header className="travel-header"><button className="brand" onClick={()=>{setTripId('');setPage('overview')}}><span><Compass size={21}/></span>roamly</button><nav aria-label="Main navigation"><button className={!tripId&&page!=='data'?'active':''} onClick={()=>{setTripId('');setPage('overview')}}>My trips</button>{trip&&<><button className={page==='overview'?'active':''} onClick={()=>setPage('overview')}>Overview</button><button className={page==='itinerary'?'active':''} onClick={()=>setPage('itinerary')}>Itinerary</button><button className={page==='places'?'active':''} onClick={()=>setPage('places')}>Saved places</button></>}<button className={page==='data'?'active':''} onClick={()=>setPage('data')}>Backups</button></nav><span className="local-label">LOCAL DEMO</span></header><main className="travel-main">{storageError&&<div className="alert" role="alert">{storageError} <button onClick={()=>setPage('data')}>Manage data</button></div>}{notice&&<div className="notice" role="status">{notice}<button onClick={()=>setNotice('')} aria-label="Dismiss">×</button></div>}
+  {!trip && page!=='data' && <><div className="hero"><div><p className="kicker">A LITTLE MORE ROOM TO WANDER</p><h1>Make the journey<br/><em>your own.</em></h1><p>All the places, plans, and little details for your next adventure, together in one thoughtful space.</p><button className="primary" onClick={()=>setTripEdit(newTrip())}><Plus size={17}/>Create a trip</button></div><div className="hero-art" aria-hidden="true"><span>旅</span><i>GOOD DAYS<br/>AHEAD</i></div></div><div className="section-title"><div><p className="kicker">YOUR COLLECTION</p><h2>My trips</h2></div><span>{db.trips.length} {db.trips.length===1?'trip':'trips'}</span></div><div className="trip-grid">{db.trips.map((t,i)=><button className="trip-card" key={t.id} onClick={()=>selectTrip(t)}><div className={`trip-card-art art-${i%3}`}><span>{t.destination.slice(0,1).toUpperCase()}</span><small>YOUR NEXT CHAPTER</small></div><div className="trip-card-content"><p>{t.destination}</p><h3>{t.name}</h3><span><CalendarDays size={15}/>{displayDate(t.start)} – {displayDate(t.end)}</span><footer>{t.activities.length} activities <b>Open trip</b></footer></div></button>)}{!db.trips.length&&<div className="empty">No trips yet. Create your first trip to get started.</div>}</div></>}
+  {trip && page!=='data' && <><button className="back" onClick={()=>setTripId('')}><ArrowLeft size={16}/>All trips</button><div className="trip-heading"><div><p className="kicker">{trip.destination.toUpperCase()} · {days.length} DAYS</p><h1>{trip.name}</h1><p>{displayDate(trip.start)} – {displayDate(trip.end)} · {trip.travelers} {trip.travelers===1?'traveler':'travelers'}</p></div><div className="actions"><button onClick={()=>setTripEdit(trip)}><Pencil size={16}/>Edit trip</button><button onClick={()=>{if(window.confirm(`Delete ${trip.name} and all its activities?`)){setDb(d=>({...d,trips:d.trips.filter(t=>t.id!==trip.id)}));setTripId('');setNotice('Trip deleted.')}}}><Trash2 size={16}/>Delete</button></div></div>
+  {page==='overview'&&<><div className="summary-grid"><article><CalendarDays/><span>Activities planned</span><strong>{trip.activities.length}</strong><small>Across {days.length} days</small></article><article><Wallet/><span>Group activity budget</span><strong>{money(totalCost(trip))}</strong><small>of {money(trip.budget)} planned</small></article><article><AlertTriangle/><span>Schedule conflicts</span><strong>{conflicts.size}</strong><small>Activities with overlapping times</small></article></div>{totalCost(trip)>trip.budget&&<div className="alert">Your planned activities exceed the trip budget by {money(totalCost(trip)-trip.budget)}.</div>}<section className="panel"><div className="panel-heading"><div><p className="kicker">YOUR ITINERARY</p><h2>A day at a time</h2></div><button onClick={()=>setPage('itinerary')}>Plan itinerary</button></div><div className="day-overview">{days.map((d,i)=><button key={d} onClick={()=>{setDay(d);setPage('itinerary')}}><span>DAY {i+1}</span><b>{displayDate(d)}</b><small>{trip.activities.filter(a=>a.date===d).length} activities</small></button>)}</div></section><section className="panel note-panel"><Bookmark size={22}/><div><h2>Keep a little inspiration</h2><p>You have {trip.places.length} saved places waiting for the right moment.</p></div><button onClick={()=>setPage('places')}>View saved places</button></section></>}
+  {page==='itinerary'&&<div className="planner"><section><div className="day-tabs" aria-label="Itinerary days">{days.map((d,i)=><button key={d} className={d===activeDay?'active':''} onClick={()=>setDay(d)}><small>DAY {i+1}</small><b>{displayDate(d)}</b></button>)}</div><div className="panel-heading"><div><p className="kicker">YOUR DAY IN {trip.destination.toUpperCase()}</p><h2>{displayDate(activeDay)}</h2><p>{items.length} activities · {money(items.reduce((s,a)=>s+a.cost,0))} group cost</p></div><button className="primary" onClick={()=>setActivityEdit(newActivity(activeDay))}><Plus size={16}/>Add activity</button></div><label className="search"><Search size={16}/><span className="sr-only">Search activities</span><input placeholder="Search activities or locations" value={search} onChange={e=>setSearch(e.target.value)}/></label><div className="activity-list">{items.filter(a=>`${a.name} ${a.location}`.toLowerCase().includes(search.toLowerCase())&&(category==='All'||a.category===category)).map((a,i)=><article className="activity-card" key={a.id}><div className="activity-time"><b>{a.time}</b><small>{a.duration} min</small></div><div className="activity-icon">{a.category.slice(0,1)}</div><div className="activity-body"><span className="category">{a.category}</span><h3>{a.name}</h3><p><MapPin size={14}/>{a.location||'Location not set'} · {money(a.cost)}</p>{a.notes&&<small>{a.notes}</small>}{conflicts.has(a.id)&&<p className="conflict"><AlertTriangle size={14}/>Overlaps another activity</p>}</div><div className="activity-actions"><button aria-label={`Move ${a.name} earlier in list`} disabled={i===0} onClick={()=>move(a,-1)}><ArrowUp size={16}/></button><button aria-label={`Move ${a.name} later in list`} disabled={i===items.length-1} onClick={()=>move(a,1)}><ArrowDown size={16}/></button><button aria-label={`Edit ${a.name}`} onClick={()=>setActivityEdit(a)}><Pencil size={16}/></button><button aria-label={`Delete ${a.name}`} onClick={()=>{if(window.confirm(`Delete ${a.name}?`))changeTrip({...trip,activities:trip.activities.filter(x=>x.id!==a.id)})}}><Trash2 size={16}/></button></div></article>)}{!items.length&&<div className="empty">Nothing planned for this day yet. Add an activity or choose a saved place.</div>}</div></section><aside className="panel route-panel"><p className="kicker">DAY AT A GLANCE</p><h2>Your route</h2><p>This is an illustrative list, not a map or navigation directions. Order can be changed using the controls on each activity.</p><ol className="route-list">{items.map(a=><li key={a.id}><b>{a.name}</b><span>{a.location||'Location not set'}</span></li>)}</ol>{!items.length&&<p>Add activities to see your route order.</p>}<label>Filter category<select value={category} onChange={e=>setCategory(e.target.value)}>{['All','Culture','Food','Nature','Shopping','Other'].map(x=><option key={x}>{x}</option>)}</select></label><button onClick={()=>setPage('places')}>Browse saved places</button></aside></div>}
+  {page==='places'&&<><div className="panel-heading"><div><p className="kicker">FOR LATER</p><h2>Saved places</h2><p>Collect ideas, then add them to a day when you are ready.</p></div><button className="primary" onClick={()=>setPlaceEdit({id:id(),name:'',location:'',category:'Culture',notes:''})}><Plus size={16}/>Save a place</button></div><div className="filters"><label className="search"><Search size={16}/><span className="sr-only">Search saved places</span><input placeholder="Search saved places" value={search} onChange={e=>setSearch(e.target.value)}/></label><label>Category<select value={category} onChange={e=>setCategory(e.target.value)}>{['All','Culture','Food','Nature','Shopping','Other'].map(x=><option key={x}>{x}</option>)}</select></label></div><div className="place-grid">{trip.places.filter(p=>`${p.name} ${p.location}`.toLowerCase().includes(search.toLowerCase())&&(category==='All'||category===p.category)).map(p=><article className="panel place-card" key={p.id}><div className="place-art">{p.category.slice(0,1)}</div><span className="category">{p.category}</span><h3>{p.name}</h3><p><MapPin size={14}/>{p.location||'Location not set'}</p><small>{p.notes}</small><div className="actions"><button onClick={()=>{setActivityEdit({...newActivity(activeDay),name:p.name,location:p.location,notes:p.notes,category:p.category});setPage('itinerary')}}><Plus size={15}/>Add to day</button><button onClick={()=>setPlaceEdit(p)} aria-label={`Edit ${p.name}`}><Pencil size={15}/></button><button aria-label={`Delete ${p.name}`} onClick={()=>{if(window.confirm(`Delete saved place ${p.name}?`))changeTrip({...trip,places:trip.places.filter(x=>x.id!==p.id)})}}><Trash2 size={15}/></button></div></article>)}{!trip.places.length&&<div className="empty">No saved places yet. Save an idea for later.</div>}</div></>}
+  </>}
+  {page==='data'&&<section className="panel data-panel"><p className="kicker">YOUR DATA</p><h1>Backups & storage</h1><p>Trips are stored in this browser only and are not synced. Clearing browser data can remove them. Export a JSON backup to keep or move your plans.</p><div className="actions"><button onClick={exportData}><Download size={16}/>Export backup</button><button onClick={()=>inputRef.current?.click()}><Upload size={16}/>Import backup</button><input hidden ref={inputRef} type="file" accept="application/json,.json" onChange={e=>void importData(e.target.files?.[0])}/></div><hr/><h2>Reset demo data</h2><p>Replace all local trips with the sample trip.</p><button onClick={()=>{if(window.confirm('Replace all trips with the demo data? Export first if needed.')){setDb(structuredClone(seed));setStorageError('');setTripId('');setNotice('Demo data restored.')}}}>Reset workspace</button></section>}
+  </main>{tripEdit&&<Modal title={db.trips.some(t=>t.id===tripEdit.id)?'Edit trip':'Create a trip'} close={()=>setTripEdit(null)}><form onSubmit={saveTrip}><label>Trip name<input autoFocus required value={tripEdit.name} onChange={e=>setTripEdit({...tripEdit,name:e.target.value})}/></label><label>Destination<input required value={tripEdit.destination} onChange={e=>setTripEdit({...tripEdit,destination:e.target.value})}/></label><div className="form-grid"><label>Start date<input type="date" required value={tripEdit.start} onChange={e=>setTripEdit({...tripEdit,start:e.target.value})}/></label><label>End date<input type="date" required min={tripEdit.start} value={tripEdit.end} onChange={e=>setTripEdit({...tripEdit,end:e.target.value})}/></label><label>Travelers<input type="number" min="1" max="100" required value={tripEdit.travelers} onChange={e=>setTripEdit({...tripEdit,travelers:Number(e.target.value)})}/></label><label>Group activity budget (JPY)<input type="number" min="0" required value={tripEdit.budget} onChange={e=>setTripEdit({...tripEdit,budget:Number(e.target.value)})}/></label></div><p className="form-hint">Activity costs and budget are for the whole group, in Japanese yen. Trip length is limited to 365 days.</p><div className="modal-actions"><button type="button" onClick={()=>setTripEdit(null)}>Cancel</button><button className="primary">Save trip</button></div></form></Modal>}
+  {trip&&activityEdit&&<Modal title={trip.activities.some(a=>a.id===activityEdit.id)?'Edit activity':'Add an activity'} close={()=>setActivityEdit(null)}><form onSubmit={saveActivity}><label>Activity name<input autoFocus required value={activityEdit.name} onChange={e=>setActivityEdit({...activityEdit,name:e.target.value})}/></label><div className="form-grid"><label>Date<input type="date" min={trip.start} max={trip.end} required value={activityEdit.date} onChange={e=>setActivityEdit({...activityEdit,date:e.target.value})}/></label><label>Start time<input type="time" required value={activityEdit.time} onChange={e=>setActivityEdit({...activityEdit,time:e.target.value})}/></label><label>Duration (minutes)<input type="number" min="1" max="1440" required value={activityEdit.duration} onChange={e=>setActivityEdit({...activityEdit,duration:Number(e.target.value)})}/></label><label>Group cost (JPY)<input type="number" min="0" required value={activityEdit.cost} onChange={e=>setActivityEdit({...activityEdit,cost:Number(e.target.value)})}/></label><label>Category<select value={activityEdit.category} onChange={e=>setActivityEdit({...activityEdit,category:e.target.value})}>{['Culture','Food','Nature','Shopping','Other'].map(x=><option key={x}>{x}</option>)}</select></label><label>Location<input value={activityEdit.location} onChange={e=>setActivityEdit({...activityEdit,location:e.target.value})}/></label></div><label>Notes<textarea value={activityEdit.notes} onChange={e=>setActivityEdit({...activityEdit,notes:e.target.value})}/></label><div className="modal-actions"><button type="button" onClick={()=>setActivityEdit(null)}>Cancel</button><button className="primary">Save activity</button></div></form></Modal>}
+  {trip&&placeEdit&&<Modal title="Save a place" close={()=>setPlaceEdit(null)}><form onSubmit={e=>{e.preventDefault();if(!placeEdit.name.trim())return;changeTrip({...trip,places:trip.places.some(p=>p.id===placeEdit.id)?trip.places.map(p=>p.id===placeEdit.id?placeEdit:p):[...trip.places,placeEdit]});setPlaceEdit(null);setNotice('Place saved.')}}><label>Place name<input autoFocus required value={placeEdit.name} onChange={e=>setPlaceEdit({...placeEdit,name:e.target.value})}/></label><label>Location<input value={placeEdit.location} onChange={e=>setPlaceEdit({...placeEdit,location:e.target.value})}/></label><label>Category<select value={placeEdit.category} onChange={e=>setPlaceEdit({...placeEdit,category:e.target.value})}>{['Culture','Food','Nature','Shopping','Other'].map(x=><option key={x}>{x}</option>)}</select></label><label>Notes<textarea value={placeEdit.notes} onChange={e=>setPlaceEdit({...placeEdit,notes:e.target.value})}/></label><div className="modal-actions"><button type="button" onClick={()=>setPlaceEdit(null)}>Cancel</button><button className="primary">Save place</button></div></form></Modal>}</div>
 }
-
-function ItineraryCard({ item, onDrag, onRemove }: { item: ScheduledItem; onDrag: () => void; onRemove: () => void }) {
-  return <article className="itinerary-card" draggable onDragStart={onDrag}>
-    <button className="grip" aria-label="Drag item"><GripVertical size={17} /></button>
-    <div className="time"><b>{item.start}</b><span>{item.duration} min</span></div>
-    <div className="activity-mark" style={{ background: item.color }}><span>{categoryIcon[item.category]}</span></div>
-    <div className="activity-copy"><div><h3>{item.name}</h3><span className="rating"><Star size={10} fill="currentColor" />{item.rating}</span></div><p><MapPin size={11} />{item.area}</p><small>{item.note}</small></div>
-    <button className="remove" onClick={onRemove} aria-label={`Remove ${item.name}`}><X size={14} /></button>
-  </article>
-}
-
-function RouteMap({ items }: { items: ScheduledItem[] }) {
-  const points = items.map((item) => item.coordinates.join(',')).join(' ')
-  return <div className="map-canvas">
-    <svg viewBox="0 0 100 100" role="img" aria-label="Map of planned stops in Kyoto">
-      <defs><pattern id="street" width="14" height="14" patternUnits="userSpaceOnUse" patternTransform="rotate(15)"><path d="M 0 0 L 0 14" stroke="#d5d0c5" strokeWidth=".5" /></pattern></defs>
-      <rect width="100" height="100" fill="#e9e6de" /><rect width="100" height="100" fill="url(#street)" />
-      <path d="M0 62 C20 55,28 70,48 58 S78 40,100 47" fill="none" stroke="#b7d5d3" strokeWidth="5" opacity=".8" />
-      <path d="M15 0 L32 100 M58 0 L48 100 M82 0 L70 100 M0 28 L100 35 M0 78 L100 70" stroke="#d0cbc0" strokeWidth="1.2" fill="none" />
-      <polyline points={points} fill="none" stroke="#e9634b" strokeWidth="1.8" strokeDasharray="3 2" strokeLinecap="round" strokeLinejoin="round" />
-      {items.map((item, index) => <g key={item.id} transform={`translate(${item.coordinates[0]} ${item.coordinates[1]})`}><circle r="4.5" fill="#fffaf1" stroke={item.color} strokeWidth="1.4" /><text x="0" y="1.6" textAnchor="middle" fontSize="4.6" fontWeight="700" fill="#253d35">{index + 1}</text></g>)}
-    </svg>
-    <div className="map-legend"><span><i />Your route</span><span>{items.length} stops</span></div>
-    <div className="map-zoom"><button>+</button><button>−</button></div>
-  </div>
-}
-
+function Modal({title,close,children}:{title:string;close:()=>void;children:React.ReactNode}){return <div className="modal-backdrop"><section className="modal" role="dialog" aria-modal="true" aria-label={title}><div className="modal-head"><h2>{title}</h2><button onClick={close} aria-label="Close">×</button></div>{children}</section></div>}
 export default App

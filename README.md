@@ -1,37 +1,27 @@
 # Roamly
 
-Roamly is a visual itinerary workspace for planning thoughtful trips with friends. The demo follows a three-day Kyoto trip and combines discovery, scheduling, budgeting, and route context in one responsive UI.
+A local-first trip planner for organizing activities, saved places and a group budget. [Live demo](https://vaibhav7711.github.io/roamly/) · [Repository](https://github.com/Vaibhav7711/roamly)
 
-## Highlights
+## What it does
 
-- Drag-and-drop places between morning, afternoon, and evening
-- Persistent itinerary state with add/remove workflows
-- Schedule overload detection and planning-progress feedback
-- Per-day and group activity budget calculations
-- Interactive category/search filters and favorites
-- Responsive slide-over panels for discovery and map views
-- Unit-tested planning utilities and automated GitHub Pages deployment
-
-## Stack
-
-React · TypeScript · Vite · Lucide · Vitest · GitHub Actions
+- Create, edit and delete trips with a destination, date range, traveler count and budget.
+- Create, edit, delete and reorder daily activities with time, duration, location, notes, category and cost.
+- Detect overlapping activity intervals, including intervals crossing midnight, and flag a budget overrun.
+- Search and filter activities and saved places; add saved places to a day.
+- Review an ordered, explicitly illustrative route list and move activities using keyboard-accessible buttons.
+- Export, validate and import a versioned JSON backup; reset the demo workspace.
 
 ## Run locally
 
 ```bash
-npm install
+npm ci
 npm run dev
 ```
 
-```bash
-npm test
-npm run build
-```
+Run `npm run lint`, `npm test`, and `npm run build` for the checks used by CI. The project uses React, TypeScript, Vite, Vitest, and GitHub Actions. Pushes to `main` deploy to GitHub Pages.
 
-## Architecture notes
+## Architecture and limitations
 
-The itinerary model is normalized by day and uses typed time slots. Budget, progress, and conflict calculations live in framework-independent utilities, making product rules easy to test. The map is a lightweight custom SVG that renders directly from the current schedule without an external map API.
+`src/domain.ts` owns the trip model, overlap detection, date generation, budget calculation and backup validation. The React view owns navigation and form state. Data is stored in localStorage under a versioned key. Costs and budgets are for the entire group, in JPY. The initial Kyoto trip is sample data. The route is an ordered list, not a geographic map or travel-time estimate. There is no account, live data, booking, synchronization or shared editing; export a backup before clearing browser data.
 
-## Resume bullet
-
-> Designed and built a collaborative travel-planning interface in React and TypeScript with drag-and-drop scheduling, conflict detection, derived budgets, SVG route visualization, persistent state, tests, and CI/CD.
+Potential next steps include multi-currency budgets, real maps and geocoding, server synchronization, drag-and-drop alongside the existing reorder buttons, end-to-end automated browser tests, and accessible focus management for dialogs.
